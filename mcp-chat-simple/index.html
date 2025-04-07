@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MCP聊天界面</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>高德地图MCP聊天助手</h1>
+    </header>
+    
+    <div class="chat-container">
+      <div class="chat-messages" id="chatMessages">
+        <div class="message system">
+          欢迎使用高德地图MCP聊天助手！您可以询问天气、路线规划、地点查询等问题。
+        </div>
+      </div>
+      
+      <div class="chat-input">
+        <textarea id="userInput" placeholder="输入您的问题，例如：北京今天天气怎么样？"></textarea>
+        <button id="sendButton">发送</button>
+      </div>
+    </div>
+    
+    <footer>
+      <p>© 2025 高德地图MCP聊天助手</p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

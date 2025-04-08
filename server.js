@@ -148,7 +148,20 @@ app.post('/api/chat', async (req, res) => {
       console.log('响应数据结构:', JSON.stringify(response.data).substring(0, 200) + '...');
     } catch (error) {
       console.error('硅基流动API调用失败:', error.message);
-      return res.status(500).json({ error: `调用硅基流动API失败: ${error.message}` });
+      // 记录更详细的错误信息
+      if (error.response) {
+        // 服务器响应了错误状态码
+        console.error('错误响应状态:', error.response.status);
+        console.error('错误响应头:', error.response.headers);
+        console.error('错误响应数据:', error.response.data);
+      } else if (error.request) {
+        // 请求已发送但没有收到响应
+        console.error('未收到响应的请求:', error.request);
+      } else {
+        // 设置请求时发生错误
+        console.error('请求设置错误:', error.message);
+      }
+      return res.status(500).json({ error: `调用硅基流动API失败: ${error.message}`, details: error.response ? error.response.data : null });
     }
     
     const responseMessage = response.data.choices[0].message;
@@ -168,6 +181,69 @@ app.post('/api/chat', async (req, res) => {
         return res.json({ 
           content: "抱歉，我目前无法连接到高德地图服务。请稍后再试，或者尝试其他问题。" 
         });
+      }
+      
+      // 预处理用户查询，提取地名
+      const userQuery = messages.find(msg => msg.role === 'user')?.content || '';
+      console.log('处理用户查询:', userQuery);
+      
+      // 如果查询包含地名和距离关键词，尝试预处理
+      const distancePattern = /([\u4e00-\u9fa5]+)\s*(?:到|\-|\s+)\s*([\u4e00-\u9fa5]+)\s*(?:的)?(?:距离|路程|路线|多远|多近)/;
+      const distanceMatch = userQuery.match(distancePattern);
+      
+      // 如果是距离查询，预先准备地理编码转换
+      if (distanceMatch && distanceMatch.length >= 3) {
+        const originCity = distanceMatch[1];
+        const destCity = distanceMatch[2];
+        console.log('检测到距离查询模式:', originCity, '到', destCity);
+        
+        // 尝试先进行地理编码转换
+        try {
+          console.log(`尝试将城市名称转换为坐标...`);
+          
+          // 先获取起点城市的坐标
+          const originGeoResult = await mcpClient.callTool({
+            name: 'maps_geo',
+            arguments: {
+              address: originCity,
+              city: originCity
+            }
+          });
+          
+          console.log(`起点城市地理编码结果:`, originGeoResult);
+          
+          // 获取目的地城市的坐标
+          const destGeoResult = await mcpClient.callTool({
+            name: 'maps_geo',
+            arguments: {
+              address: destCity,
+              city: destCity
+            }
+          });
+          
+          console.log(`目的地城市地理编码结果:`, destGeoResult);
+          
+          // 检查地理编码结果
+          if (originGeoResult && originGeoResult.geocodes && originGeoResult.geocodes.length > 0 &&
+              destGeoResult && destGeoResult.geocodes && destGeoResult.geocodes.length > 0) {
+            
+            // 提取坐标
+            const originLocation = originGeoResult.geocodes[0].location;
+            const destLocation = destGeoResult.geocodes[0].location;
+            
+            console.log(`已获取坐标 - 起点: ${originLocation}, 目的地: ${destLocation}`);
+            
+            // 存储坐标信息供后续工具调用使用
+            global.locationCache = {
+              origin: originLocation,
+              destination: destLocation,
+              originCity: originCity,
+              destCity: destCity
+            };
+          }
+        } catch (error) {
+          console.error('地理编码转换失败:', error.message);
+        }
       }
       
       // 处理工具调用
@@ -191,9 +267,48 @@ app.post('/api/chat', async (req, res) => {
             throw new Error("MCP客户端未连接");
           }
           
+          // 检查参数格式，确保没有未解析的模板变量
+          let sanitizedArgs = toolArgs;
+          if (typeof toolArgs === 'object') {
+            sanitizedArgs = {};
+            for (const [key, value] of Object.entries(toolArgs)) {
+              if (typeof value === 'string' && value.includes('{{') && value.includes('}}')) {
+                console.warn(`警告: 参数 ${key} 包含未解析的模板变量: ${value}`);
+                
+                // 如果是地理工具且我们有缓存的坐标信息，尝试使用缓存
+                if (global.locationCache && toolName.startsWith('maps_')) {
+                  if (key === 'origins' || key === 'origin') {
+                    console.log(`使用缓存的起点坐标替换模板变量:`, global.locationCache.origin);
+                    sanitizedArgs[key] = global.locationCache.origin;
+                  } else if (key === 'destination') {
+                    console.log(`使用缓存的目的地坐标替换模板变量:`, global.locationCache.destination);
+                    sanitizedArgs[key] = global.locationCache.destination;
+                  } else {
+                    // 其他模板变量使用空字符串
+                    sanitizedArgs[key] = "";
+                  }
+                } else {
+                  // 没有缓存或不是地图工具，使用空字符串
+                  sanitizedArgs[key] = "";
+                }
+              } else {
+                sanitizedArgs[key] = value;
+              }
+            }
+            
+            // 如果是距离查询工具，确保添加类型参数
+            if (toolName === 'maps_distance' && global.locationCache) {
+              if (!sanitizedArgs.type) {
+                sanitizedArgs.type = "1"; // 1代表驾车距离
+              }
+            }
+          }
+          
+          console.log(`使用净化后的参数调用工具:`, sanitizedArgs);
+          
           const toolResult = await mcpClient.callTool({
             name: toolName,
-            arguments: toolArgs
+            arguments: sanitizedArgs
           });
           
           console.log(`工具 ${toolName} 调用成功:`, toolResult);
@@ -205,10 +320,35 @@ app.post('/api/chat', async (req, res) => {
         } catch (error) {
           console.error(`工具调用失败: ${toolName}`, error);
           
-          // 使用模拟数据响应
+          // 记录更详细的错误信息
+          let errorDetails = error.message || '未知错误';
+          
+          // 尝试提取更多错误信息
+          if (error.stack) {
+            console.error(`错误堆栈: ${error.stack}`);
+          }
+          
+          // 如果是高德地图MCP服务器错误，尝试解析错误详情
+          if (errorDetails.includes('HTTP 500') && errorDetails.includes('Internal Server Error')) {
+            console.error('高德地图MCP服务器内部错误，可能是参数格式不正确或服务暂时不可用');
+            
+            // 检查是否是特定的地图工具
+            if (toolName.startsWith('maps_')) {
+              console.log('尝试提供地图工具的参数格式建议...');
+              
+              // 根据工具类型提供建议
+              if (toolName === 'maps_distance') {
+                errorDetails += '\n建议的参数格式: {"origins": "116.481028,39.989643", "destination": "116.434446,39.90816", "type": "1"}';
+              } else if (toolName === 'maps_direction_driving') {
+                errorDetails += '\n建议的参数格式: {"origin": "116.481028,39.989643", "destination": "116.434446,39.90816"}';
+              }
+            }
+          }
+          
+          // 使用错误信息响应
           toolResults.push({
             tool_call_id: toolCall.id,
-            error: `工具调用失败: ${error.message || '未知错误'}`
+            error: `工具调用失败: ${errorDetails}`
           });
         }
       }
@@ -219,12 +359,50 @@ app.post('/api/chat', async (req, res) => {
       ]);
       
       // 添加工具结果
+      let hasErrors = false;
+      let distanceResult = null;
+      
       for (const result of toolResults) {
+        // 检查是否有错误
+        if (result.error) {
+          hasErrors = true;
+        }
+        
+        // 检查是否是距离查询结果
+        if (!result.error && result.result && 
+            responseMessage.tool_calls.find(call => call.id === result.tool_call_id)?.function?.name === 'maps_distance') {
+          distanceResult = result.result;
+        }
+        
         toolMessages.push({
           role: 'tool',
           tool_call_id: result.tool_call_id,
           content: result.error ? JSON.stringify({ error: result.error }) : JSON.stringify(result.result)
         });
+      }
+      
+      // 如果有距离查询结果且有缓存的坐标信息，直接生成友好的响应
+      if (distanceResult && global.locationCache && !hasErrors) {
+        try {
+          console.log('处理距离查询结果:', distanceResult);
+          
+          // 提取距离信息
+          if (distanceResult.results && distanceResult.results.length > 0) {
+            const distance = distanceResult.results[0].distance;
+            const formattedDistance = distance > 1000 ? `${(distance/1000).toFixed(1)}公里` : `${distance}米`;
+            const duration = distanceResult.results[0].duration;
+            const formattedDuration = Math.floor(duration / 60);
+            
+            // 构建友好的响应
+            const friendlyResponse = `从${global.locationCache.originCity}到${global.locationCache.destCity}的驾车距离是${formattedDistance}，预计需要${formattedDuration}分钟的驾车时间。`;
+            
+            console.log('生成的友好响应:', friendlyResponse);
+            return res.json({ content: friendlyResponse });
+          }
+        } catch (error) {
+          console.error('处理距离结果时出错:', error);
+          // 如果处理出错，继续使用模型生成响应
+        }
       }
       
       // 获取下一个响应

@@ -1,101 +1,49 @@
-import { createClients } from './build/siliconflow-client.js';
+// 简化的Worker版本 - 适用于Cloudflare环境
+// 注意：这个版本移除了对Node.js特有API的依赖
 
-// 环境变量获取
-const SILICONFLOW_API_KEY = process.env.SILICONFLOW_API_KEY;
-const AMAP_MCP_URL = process.env.AMAP_MCP_URL;
-const SILICONFLOW_API_URL = "https://api.siliconflow.cn/v1/chat/completions";
-const QWEN_MODEL = "Qwen/QwQ-32B";
-
-// 全局变量
-let mcpClient = null;
-let siliconFlowClient = null;
-let isInitialized = false;
-let availableTools = [];
-
-// 初始化客户端
-async function initClients() {
-  if (isInitialized) return true;
-  
-  try {
-    const clients = createClients(AMAP_MCP_URL, SILICONFLOW_API_KEY);
-    mcpClient = clients.mcpClient;
-    siliconFlowClient = clients.siliconFlowClient;
-    
-    // 初始化MCP客户端
-    await mcpClient.initialize();
-    availableTools = mcpClient.getAvailableTools();
-    isInitialized = true;
-    return true;
-  } catch (error) {
-    console.error("初始化客户端失败:", error);
-    return false;
-  }
-}
-
-// 处理API请求
-async function handleAPIRequest(request) {
-  try {
-    const data = await request.json();
-    const { messages } = data;
-    
-    if (!messages || !Array.isArray(messages)) {
-      return new Response(
-        JSON.stringify({ error: '无效的请求格式' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      );
-    }
-    
-    // 确保已初始化
-    const initialized = await initClients();
-    if (!initialized) {
-      return new Response(
-        JSON.stringify({ error: '服务初始化失败' }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
-      );
-    }
-    
-    // 处理请求
-    // 实际处理逻辑将基于server.js实现，但需要适配Cloudflare Workers环境
-    // 这里提供一个简化的示例
-    const response = await siliconFlowClient.callLLMAPI(messages, availableTools);
-    
-    // 处理响应
-    return new Response(
-      JSON.stringify({ content: response.content || "抱歉，目前无法处理您的请求" }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
-    );
-    
-  } catch (error) {
-    console.error("处理请求失败:", error);
-    return new Response(
-      JSON.stringify({ error: `服务器错误: ${error.message || '未知错误'}` }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
-  }
-}
-
-// 处理静态资源请求
-function handleStaticRequest(request, url) {
-  // 简化的静态资源处理
-  // 在实际环境中可能需要使用KV存储或Assets绑定
-  return new Response("静态资源未实现", { status: 404 });
-}
-
-// Workers入口点
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     
-    // 设置环境变量
-    if (env.SILICONFLOW_API_KEY) process.env.SILICONFLOW_API_KEY = env.SILICONFLOW_API_KEY;
-    if (env.AMAP_MCP_URL) process.env.AMAP_MCP_URL = env.AMAP_MCP_URL;
-    
-    // API请求
+    // 处理API请求
     if (url.pathname === '/api/chat' && request.method === 'POST') {
-      return handleAPIRequest(request);
+      return new Response(
+        JSON.stringify({ 
+          content: "这是一个Cloudflare Worker示例响应。真实功能需要在控制台配置环境变量并完善代码。" 
+        }),
+        { 
+          status: 200, 
+          headers: { 'Content-Type': 'application/json' } 
+        }
+      );
     }
     
-    // 静态资源
-    return handleStaticRequest(request, url);
+    // 处理根路径请求
+    if (url.pathname === '/' || url.pathname === '') {
+      return new Response(
+        `<!DOCTYPE html>
+        <html>
+        <head>
+          <title>MCP聊天客户端</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
+            h1 { color: #333; }
+          </style>
+        </head>
+        <body>
+          <h1>MCP聊天客户端 - Cloudflare Worker版</h1>
+          <p>服务已成功部署！</p>
+          <p>这是一个简化版的响应页面，表明Worker已正常运行。</p>
+        </body>
+        </html>`,
+        { 
+          status: 200,
+          headers: { 'Content-Type': 'text/html;charset=UTF-8' }
+        }
+      );
+    }
+    
+    // 处理其他请求
+    return new Response('未找到资源', { status: 404 });
   }
 }; 

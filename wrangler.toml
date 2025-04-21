@@ -1,6 +1,8 @@
 name = "mcp-chat-client"
 compatibility_date = "2023-12-01"
 main = "worker.js"
+compatibility_flags = ["nodejs_compat"]
+node_compat = true
 
 [build]
 command = "npm run build"

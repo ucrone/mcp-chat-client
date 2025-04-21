@@ -5,7 +5,9 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc",
-    "start": "node server.js"
+    "start": "node server.js",
+    "prestart": "npm run build",
+    "prebuild": "node build.js"
   },
   "keywords": [],
   "author": "",

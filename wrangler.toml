@@ -1,19 +1,19 @@
 name = "mcp-chat-client"
 compatibility_date = "2023-12-01"
-main = "server.js"
+main = "worker.js"
 
 [build]
 command = "npm run build"
 cwd = "."
 
 [build.upload]
-format = "modules"
+format = "module"
 dir = "."
-main = "./server.js"
+main = "./worker.js"
 
 [[build.upload.rules]]
 type = "ESModule"
 globs = ["**/*.js"]
 
-[env.production]
-workers_dev = true 
+[vars]
+NODE_ENV = "production" 

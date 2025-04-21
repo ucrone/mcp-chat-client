@@ -47,7 +47,36 @@ exec('npx tsc', (error, stdout, stderr) => {
   // 检查编译是否生成了文件
   if (fs.existsSync('./build/siliconflow-client.js')) {
     console.log('siliconflow-client.js 生成成功');
+    
+    // 确保生成的文件使用ESM语法
+    console.log('确保输出文件使用ESM语法...');
+    makeESMCompatible();
   } else {
     console.warn('警告: siliconflow-client.js 未生成');
   }
-}); 
+});
+
+// 确保生成的文件与Cloudflare Workers兼容
+function makeESMCompatible() {
+  try {
+    // 检查build目录下的所有JS文件
+    const buildFiles = fs.readdirSync('./build');
+    const jsFiles = buildFiles.filter(file => file.endsWith('.js'));
+    
+    for (const file of jsFiles) {
+      const filePath = path.join('./build', file);
+      let content = fs.readFileSync(filePath, 'utf8');
+      
+      // 确保文件使用ESM语法
+      if (!content.includes('export ')) {
+        console.log(`向 ${file} 添加ESM导出...`);
+        content += '\nexport { MCPClient, SiliconFlowClient, createClients };\n';
+        fs.writeFileSync(filePath, content);
+      }
+    }
+    
+    console.log('所有文件已更新为ESM兼容');
+  } catch (error) {
+    console.error('更新ESM兼容性时出错:', error);
+  }
+} 

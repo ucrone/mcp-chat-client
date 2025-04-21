@@ -1,9 +1,14 @@
 #!/usr/bin/env node
 
-// 构建脚本 - 使用CommonJS语法
-const { exec } = require('child_process');
-const fs = require('fs');
-const path = require('path');
+// 构建脚本 - 使用ES模块语法
+import { exec } from 'child_process';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// 获取当前文件的目录
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // 创建构建目录
 if (!fs.existsSync('./build')) {
